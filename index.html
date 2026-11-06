@@ -316,7 +316,7 @@ function sendBarcode(upc) {
       document.getElementById("count").textContent = scanCount;
 
       flash("success");
-      beep(true);
+     playCoinSound();
 
       status(
         "✓ SAVED! " + upc +

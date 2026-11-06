@@ -1,0 +1,331 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Funko Pop Scanner</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px;
+  background: #101827;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+h1 { margin: 12px 0 6px; }
+.sub { color: #aab8ca; margin-bottom: 22px; }
+.panel {
+  max-width: 480px;
+  margin: auto;
+  background: #1d293b;
+  border-radius: 16px;
+  padding: 18px;
+}
+input {
+  width: 100%;
+  padding: 13px;
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid #52627a;
+  font-size: 16px;
+}
+button {
+  width: 100%;
+  padding: 15px;
+  margin: 7px 0;
+  border: 0;
+  border-radius: 9px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.start { background: #2563eb; color: white; }
+.stop { background: #475569; color: white; }
+.manual { background: #0d9488; color: white; }
+#reader {
+  width: 100%;
+  margin: 15px auto;
+  overflow: hidden;
+  border-radius: 10px;
+}
+#status {
+  min-height: 48px;
+  margin: 14px 0;
+  padding: 12px;
+  background: #334155;
+  border-radius: 9px;
+  line-height: 1.4;
+}
+#count { font-size: 30px; font-weight: bold; }
+#flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .12s;
+  z-index: 100;
+}
+#flash.success { background: #16a34a; }
+#flash.error { background: #dc2626; }
+#flash.active { opacity: .38; }
+.small { color: #aab8ca; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="flash"></div>
+
+<h1>Funko Pop Scanner</h1>
+<div class="sub">Scan a barcode to add it to your inventory</div>
+
+<div class="panel">
+
+  <label for="apiKey">Scanner API Key</label>
+  <input id="apiKey" type="password" placeholder="Enter your API token">
+
+  <button class="start" onclick="startScanner()">START CAMERA</button>
+  <button class="stop" onclick="stopScanner()">STOP CAMERA</button>
+
+  <div id="reader"></div>
+
+  <div id="status">Enter your API key and start scanning.</div>
+
+  <div class="small">Scans saved this session</div>
+  <div id="count">0</div>
+
+  <hr style="border-color:#475569;margin:20px 0">
+
+  <label for="manualUPC">Enter barcode manually</label>
+  <input id="manualUPC" inputmode="numeric" placeholder="Enter UPC number">
+  <button class="manual" onclick="manualScan()">SUBMIT BARCODE</button>
+
+  <p class="small">Keep this page open while scanning your collection.</p>
+</div>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbzalpO6l4-eiowGoYIZy-9khTZZBRDETpA2B6FfXrCsI0iIVaKGXCN6t8sohso0Tb5v/exec";
+
+let scanner = null;
+let scanning = false;
+let busy = false;
+let scanCount = 0;
+let soundEnabled = true;
+
+function status(message) {
+  document.getElementById("status").textContent = message;
+}
+
+function flash(type) {
+  const el = document.getElementById("flash");
+  el.className = "";
+  el.classList.add(type, "active");
+  setTimeout(() => el.className = "", 350);
+}
+
+function beep(success) {
+  if (!soundEnabled) return;
+
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.type = "sine";
+    oscillator.frequency.value = success ? 880 : 220;
+    gain.gain.value = 0.12;
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.16);
+    oscillator.onended = () => ctx.close();
+  } catch (e) {}
+}
+
+async function startScanner() {
+  if (scanning) return;
+
+  if (!document.getElementById("apiKey").value.trim()) {
+    status("Please enter your API key first.");
+    return;
+  }
+
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    status("Camera access requires a secure HTTPS webpage. Open your GitHub Pages link in Safari.");
+    return;
+  }
+
+  try {
+    status("Starting camera...");
+
+    if (!scanner) {
+      scanner = new Html5Qrcode("reader");
+    }
+
+    await scanner.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: { width: 300, height: 140 },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E
+        ]
+      },
+      (decodedText) => {
+        if (!busy) handleScan(decodedText);
+      },
+      () => {}
+    );
+
+    scanning = true;
+    status("Camera ready. Point it at a Funko Pop barcode.");
+
+  } catch (err) {
+    status("Could not start camera: " + err.message +
+      " Check Safari camera permissions and try again.");
+  }
+}
+
+async function stopScanner() {
+  if (scanner && scanning) {
+    try {
+      await scanner.stop();
+      scanning = false;
+      status("Camera stopped.");
+    } catch (err) {
+      status("Could not stop camera: " + err.message);
+    }
+  }
+}
+
+async function handleScan(upc) {
+  if (busy) return;
+
+  busy = true;
+  upc = String(upc).replace(/\D/g, "");
+
+  if (!upc) {
+    busy = false;
+    return;
+  }
+
+  status("Barcode detected: " + upc + ". Saving to inventory...");
+
+  try {
+    if (scanner && scanning) {
+      await scanner.stop();
+      scanning = false;
+    }
+
+    await sendBarcode(upc);
+
+  } catch (err) {
+    status("Scan error: " + err.message);
+    flash("error");
+    beep(false);
+    busy = false;
+  }
+}
+
+function sendBarcode(upc) {
+  return new Promise((resolve, reject) => {
+    const key = document.getElementById("apiKey").value.trim();
+
+    if (!key) {
+      reject(new Error("API key is missing."));
+      return;
+    }
+
+    const callbackName = "funkoCallback_" + Date.now() + "_" +
+      Math.floor(Math.random() * 100000);
+
+    const script = document.createElement("script");
+    let finished = false;
+
+    const cleanup = () => {
+      delete window[callbackName];
+      script.remove();
+      clearTimeout(timeout);
+    };
+
+    const timeout = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      reject(new Error("Server response timed out. Check your connection."));
+    }, 30000);
+
+    window[callbackName] = async (result) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+
+      if (!result.success) {
+        reject(new Error(result.error || "Could not save barcode."));
+        return;
+      }
+
+      scanCount++;
+      document.getElementById("count").textContent = scanCount;
+
+      flash("success");
+      beep(true);
+
+      status(
+        "✓ SAVED! " + upc +
+        (result.name ? " — " + result.name : "") +
+        " | Spreadsheet row: " + result.row
+      );
+
+      document.getElementById("manualUPC").value = "";
+
+      resolve(result);
+
+      setTimeout(() => {
+        if (!busy) return;
+        startScanner().catch(() => {});
+      }, 700);
+    };
+
+    const params = new URLSearchParams({
+      action: "scan",
+      key: key,
+      upc: upc,
+      callback: callbackName
+    });
+
+    script.src = API_URL + "?" + params.toString();
+
+    script.onerror = () => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      reject(new Error("Could not contact Apps Script. Check deployment access."));
+    };
+
+    document.body.appendChild(script);
+  }).finally(() => {
+    busy = false;
+  });
+}
+
+async function manualScan() {
+  const upc = document.getElementById("manualUPC").value.trim();
+
+  if (!upc) {
+    status("Enter a barcode first.");
+    return;
+  }
+
+  await handleScan(upc);
+}
+</script>
+
+</body>
+</html>

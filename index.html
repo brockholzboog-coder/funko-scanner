@@ -287,10 +287,13 @@ function sendBarcode(upc) {
 
       resolve(result);
 
-     setTimeout(() => {
-  if (busy) return;
-  startScanner().catch(() => {});
-}, 700);
+setTimeout(async () => {
+  try {
+    await startScanner();
+  } catch (err) {
+    status("Saved! Tap START CAMERA to continue.");
+  }
+}, 1500);
 
     const params = new URLSearchParams({
       action: "scan",

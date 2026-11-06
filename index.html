@@ -233,6 +233,7 @@ async function handleScan(upc) {
   }
 }
 
+
 function sendBarcode(upc) {
   return new Promise((resolve, reject) => {
     const key = document.getElementById("apiKey").value.trim();
@@ -261,7 +262,7 @@ function sendBarcode(upc) {
       reject(new Error("Server response timed out. Check your connection."));
     }, 30000);
 
-    window[callbackName] = async (result) => {
+    window[callbackName] = (result) => {
       if (finished) return;
       finished = true;
       cleanup();
@@ -287,10 +288,14 @@ function sendBarcode(upc) {
 
       resolve(result);
 
-setTimeout(() => {
-  if (busy) return;
-  startScanner().catch(() => {});
-}, 700);
+      setTimeout(() => {
+        if (!scanning) {
+          startScanner().catch(err => {
+            status("Saved! Tap START CAMERA to continue.");
+          });
+        }
+      }, 1000);
+    };
 
     const params = new URLSearchParams({
       action: "scan",
@@ -314,16 +319,6 @@ setTimeout(() => {
   });
 }
 
-async function manualScan() {
-  const upc = document.getElementById("manualUPC").value.trim();
-
-  if (!upc) {
-    status("Enter a barcode first.");
-    return;
-  }
-
-  await handleScan(upc);
-}
 </script>
 
 </body>

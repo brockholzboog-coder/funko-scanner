@@ -287,11 +287,10 @@ function sendBarcode(upc) {
 
       resolve(result);
 
-      setTimeout(() => {
-        if (!busy) return;
-        startScanner().catch(() => {});
-      }, 700);
-    };
+     setTimeout(() => {
+  if (busy) return;
+  startScanner().catch(() => {});
+}, 700);
 
     const params = new URLSearchParams({
       action: "scan",
